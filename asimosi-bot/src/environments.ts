@@ -1,12 +1,12 @@
 export const environments = {
     bot: {
-        server: 'irc.hirana.net',
-        botName: 'Asimosi',
+        server: process.env.SERVER ? process.env.SERVER : 'irc.hirana.net',
+        botName: process.env.NICK ? process.env.NICK : 'Asimosi',
         channels: [
-            '#main',
-            '#underc0de'
+            '#probando',
+            // '#underc0de'
         ],
-        password: '',
+        password: process.env.PASSWORD ? process.env.PASSWORD : '',
         rulette: {
             command: '-info',
             cooldown: 60*1000, // 60 seconds.

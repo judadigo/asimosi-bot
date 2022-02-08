@@ -9,7 +9,7 @@ export class AppService {
 
   private client: NodeIRC.Client;
   private usersInChannel: {[key:string]: string[]} = {};
-  public lastKick = 0;
+  public nextAllowedKick = 0;
 
   constructor() {
     this.client = new NodeIRC.Client(environments.bot.server, environments.bot.botName, {
@@ -23,18 +23,21 @@ export class AppService {
     this.client.on('registered', () => {
       this.client.say('NickServ', 'identify ' + environments.bot.password);
     });
-    this.client.addListener('join', function(channel, who) {
+    this.client.addListener('join', (channel, who) => {
+      this.logger.debug(`Joining ${who} to ${channel}, me ${environments.bot.botName}`);
       if(this.clearNick(who) != environments.bot.botName) {
-        this.usersInChannel[channel].append(who);
+        this.usersInChannel[channel].push(who);
       }
     });
-    this.client.addListener('part', function(channel, who, reason) {
+    this.client.addListener('part', (channel, who, reason) => {
+      this.logger.debug(`Parting ${who} from ${channel}, me ${environments.bot.botName}`);
       if(this.clearNick(who) != environments.bot.botName) {
         const index = this.usersInChannel[channel].indexOf(who);
         this.usersInChannel[channel].splice(index, 1);
       }
     });
-    this.client.addListener('kick', function(channel, who, by, reason) {
+    this.client.addListener('kick', (channel, who, by, reason) => {
+      this.logger.debug(`Kicking ${who} from ${channel}, me ${environments.bot.botName}`);
       if(this.clearNick(who) != environments.bot.botName) {
         const index = this.usersInChannel[channel].indexOf(who);
         this.usersInChannel[channel].splice(index, 1);
@@ -46,24 +49,28 @@ export class AppService {
       }
     });
     this.client.on('names', (channel, nicks) => {
-      this.usersInChannel[channel] = nicks;
+      this.usersInChannel[channel] = Object.entries(nicks).map<string>((kvArray) => kvArray[0]);
     });
     this.client.addListener('message', (from, to, message: string) => {
       if (to.match(/^[#&]/)) {
         const user = from;
         const now = new Date();
         if(message.indexOf(environments.bot.rulette.command) === 0) {
-          if(this.lastKick > now.getTime() - environments.bot.rulette.cooldown) {
+          this.logger.debug(`Requiring kick roulette lk:${this.nextAllowedKick} now:${now.getTime()}, msg:${message}`);
+          if(now.getTime() > this.nextAllowedKick) {
+            this.nextAllowedKick = now.getTime() + environments.bot.rulette.cooldown;
             const args = message.split(' ');
             const quantity = args.length > 1 && parseInt(args[1]) > 0 ? parseInt(args[1]) : 1;
             const qttyInChannel = this.usersInChannel[to].length;
-            for(let i; i<quantity; i++)  {
+            this.logger.debug(`Users in channel ${qttyInChannel}, kicking ${quantity} - ${this.usersInChannel[to].join(',')}`);
+            for(let i = 0; i<quantity; i++)  {
               const randomIdx = this.random(0, qttyInChannel - 1);
               this.logger.debug(`kicking ${this.usersInChannel[to][randomIdx]} from channel ${to}`);
               this.client.send('kick', to, this.usersInChannel[to][randomIdx]);
             }
           } else {
-            this.client.say(to, `${user} nope, debes esperar unos segundos`);
+            const secondsPending = Math.ceil((this.nextAllowedKick - now.getTime()) / 1000);
+            this.client.say(to, `${user} nope, debes esperar ${secondsPending} segundo/s`);
           }
         }
       } else {
